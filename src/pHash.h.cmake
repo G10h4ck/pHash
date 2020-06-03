@@ -263,6 +263,18 @@ int ph_hamming_distance(const ulong64 hash1,const ulong64 hash2);
 **/
 uint8_t* ph_mh_imagehash(const char *filename, int &N, float alpha=2.0f, float lvl = 1.0f);
 
+/** /brief create MH image hash from a pre-decoded image buffer.
+ *  The caller owns img; it is not modified. The image is expected to be a
+ *  512x512 single-channel CImg matching the format produced by the
+ *  preprocessing pipeline in ph_mh_imagehash.
+*   /param img - read-only image buffer
+*   /param N - (out) length of returned hash (72 on success, 0 on failure)
+*   /param alpha - int scale factor for marr wavelet (default=2)
+*   /param lvl   - int level of scale factor (default = 1)
+*   /return newly-allocated uint8_t[N] array (caller frees), or NULL on error
+**/
+uint8_t* ph_mh_imagehash_from_buffer(const CImg<uint8_t> &img, int &N, float alpha=2.0f, float lvl = 1.0f);
+
 /** /brief count number bits set in given byte
 *   /param val - uint8_t byte value
 *   /return int value for number of bits set
