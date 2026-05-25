@@ -221,6 +221,45 @@ JNIEXPORT jobject JNICALL Java_org_phash_pHash_mhImageHash(JNIEnv *e, jclass cl,
 
     return imageHash;
 }
+
+// Hash an image already held in memory. Avoids the temp-file round-trip
+// that mhImageHash(String) requires. The byte[] is the row-major interleaved
+// pixel data; for a 3-channel RGB image it should be width*height*3 bytes,
+// for a 4-channel RGBA image width*height*4 (alpha is discarded), and for
+// a 1-channel grayscale image width*height.
+JNIEXPORT jobject JNICALL Java_org_phash_pHash_mhImageHashFromPixels(
+    JNIEnv *e, jclass cl, jbyteArray jpixels, jint width, jint height,
+    jint channels) {
+    if (jpixels == NULL) return NULL;
+
+    jsize len = e->GetArrayLength(jpixels);
+    if ((jlong)len < (jlong)width * (jlong)height * (jlong)channels) {
+        // Caller passed too small a buffer; refuse rather than read past it.
+        return NULL;
+    }
+
+    jbyte *pixels = e->GetByteArrayElements(jpixels, NULL);
+    if (pixels == NULL) return NULL;
+
+    int N = 0;
+    uint8_t *hash = ph_mh_imagehash_from_pixels(
+        reinterpret_cast<const uint8_t *>(pixels), width, height, channels,
+        &N, 2.0f, 1.0f);
+
+    // JNI_ABORT: we didn't modify pixels, so don't copy them back.
+    e->ReleaseByteArrayElements(jpixels, pixels, JNI_ABORT);
+
+    jobject imageHash = NULL;
+    if (hash && N > 0) {
+        imageHash = e->NewObject(mhImClass, mhImCtor);
+        // No filename for buffer-based input; leave the field null.
+        jbyteArray hashVals = e->NewByteArray(N);
+        e->SetByteArrayRegion(hashVals, 0, N, reinterpret_cast<jbyte *>(hash));
+        e->SetObjectField(imageHash, mhImHash_hash, hashVals);
+        free(hash);
+    }
+    return imageHash;
+}
 JNIEXPORT jobject JNICALL Java_org_phash_pHash_radialImageHash(JNIEnv *e,
                                                                jclass cl,
                                                                jstring f) {

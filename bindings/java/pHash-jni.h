@@ -17,6 +17,8 @@ JNIEXPORT jobject JNICALL Java_org_phash_pHash_dctImageHash(JNIEnv *env, jclass,
                                                             jstring);
 JNIEXPORT jobject JNICALL Java_org_phash_pHash_mhImageHash(JNIEnv *env, jclass,
                                                            jstring);
+JNIEXPORT jobject JNICALL Java_org_phash_pHash_mhImageHashFromPixels(
+    JNIEnv *env, jclass, jbyteArray, jint, jint, jint);
 JNIEXPORT jobject JNICALL Java_org_phash_pHash_radialImageHash(JNIEnv *env,
                                                                jclass, jstring);
 JNIEXPORT jobject JNICALL Java_org_phash_pHash_textHash(JNIEnv *env, jclass,
