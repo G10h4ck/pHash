@@ -756,11 +756,17 @@ uint8_t *ph_mh_imagehash(const char *filename, int &N, float alpha, float lvl) {
     }
     src.clear();
 
+    return ph_mh_imagehash_from_buffer(img, N, alpha, lvl);
+}
+
+uint8_t *ph_mh_imagehash_from_buffer(const CImg<uint8_t> &img, int &N,
+                                     float alpha, float lvl) {
+    N = 0;
+
     CImg<float> *pkernel = GetMHKernel(alpha, lvl);
     if (pkernel == NULL) return NULL;
     CImg<float> fresp = img.get_correlate(*pkernel);
     delete pkernel;
-    img.clear();
 
     uint8_t *hash = (uint8_t *)malloc(72 * sizeof(uint8_t));
     if (hash == NULL) return NULL;
