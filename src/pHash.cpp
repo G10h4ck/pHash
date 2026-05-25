@@ -39,6 +39,35 @@ const char *ph_about() {
     return phash_version;
 }
 #ifdef HAVE_IMAGE_HASH
+// Sample the image at (x, y) using bilinear interpolation. (x, y) must lie
+// inside [0, width-1] x [0, height-1]; caller checks bounds.
+static inline double bilinear_sample(const CImg<uint8_t> &img, double x,
+                                     double y) {
+    int x0 = (int)std::floor(x);
+    int y0 = (int)std::floor(y);
+    int x1 = (x0 + 1 < img.width()) ? x0 + 1 : x0;
+    int y1 = (y0 + 1 < img.height()) ? y0 + 1 : y0;
+    double fx = x - x0;
+    double fy = y - y0;
+    double v00 = img(x0, y0);
+    double v10 = img(x1, y0);
+    double v01 = img(x0, y1);
+    double v11 = img(x1, y1);
+    return (1 - fx) * (1 - fy) * v00 + fx * (1 - fy) * v10 +
+           (1 - fx) * fy * v01 + fx * fy * v11;
+}
+
+// Radon-transform-style line integrals: for each of N angles uniformly
+// spaced in [0, pi), walk along a line through the image center at that
+// angle, sampling with bilinear interpolation. Stores up to D samples per
+// angle in projs.R (column = angle k, row = position along the line).
+// nb_pix_perline[k] is the count of in-bounds samples for angle k.
+//
+// The previous implementation walked integer pixels with separate
+// x-stepping / y-stepping branches stitched together at 45 / 135 degrees,
+// which left projections asymmetric, missed sub-pixel detail, and contained
+// a reflected (rather than rotated) line for one of the quadrants. This
+// version uses a single uniform parameterisation per angle.
 int ph_radon_projections(const CImg<uint8_t> &img, int N, Projections &projs) {
     projs.R = NULL;
     projs.nb_pix_perline = NULL;
@@ -47,11 +76,10 @@ int ph_radon_projections(const CImg<uint8_t> &img, int N, Projections &projs) {
 
     int width = img.width();
     int height = img.height();
+    if (width <= 0 || height <= 0) return -1;
     int D = (width > height) ? width : height;
-    float x_center = (float)width / 2;
-    float y_center = (float)height / 2;
-    int x_off = std::round(x_center);
-    int y_off = std::round(y_center);
+    double cx = (width - 1) / 2.0;
+    double cy = (height - 1) / 2.0;
 
     try {
         projs.R = new CImg<uint8_t>(N, D, 1, 1, 0);
@@ -64,49 +92,31 @@ int ph_radon_projections(const CImg<uint8_t> &img, int N, Projections &projs) {
         projs.R = NULL;
         return -1;
     }
-
     projs.size = N;
 
     CImg<uint8_t> *ptr_radon_map = projs.R;
     int *nb_per_line = projs.nb_pix_perline;
+    int half = D / 2;
 
-    for (int k = 0; k < N / 4 + 1; k++) {
-        double theta = k * cimg::PI / N;
-        double alpha = std::tan(theta);
-        for (int x = 0; x < D; x++) {
-            double y = alpha * (x - x_off);
-            int yd = std::round(y);
-            if ((yd + y_off >= 0) && (yd + y_off < height) && (x < width)) {
-                *ptr_radon_map->data(k, x) = img(x, yd + y_off);
+    for (int k = 0; k < N; k++) {
+        double theta = (double)k * cimg::PI / (double)N;
+        double dx = std::cos(theta);
+        double dy = std::sin(theta);
+
+        for (int i = 0; i < D; i++) {
+            double t = (double)(i - half);
+            double x = cx + t * dx;
+            double y = cy + t * dy;
+
+            if (x >= 0.0 && x <= (double)(width - 1) && y >= 0.0 &&
+                y <= (double)(height - 1)) {
+                double v = bilinear_sample(img, x, y);
+                if (v < 0.0) v = 0.0;
+                if (v > 255.0) v = 255.0;
+                *ptr_radon_map->data(k, i) = (uint8_t)(v + 0.5);
                 nb_per_line[k] += 1;
             }
-            if ((yd + x_off >= 0) && (yd + x_off < width) && (k != N / 4) &&
-                (x < height)) {
-                *ptr_radon_map->data(N / 2 - k, x) = img(yd + x_off, x);
-                nb_per_line[N / 2 - k] += 1;
-            }
         }
-    }
-    int j = 0;
-    for (int k = 3 * N / 4; k < N; k++) {
-        double theta = k * cimg::PI / N;
-        double alpha = std::tan(theta);
-        for (int x = 0; x < D; x++) {
-            double y = alpha * (x - x_off);
-            int yd = std::round(y);
-            if ((yd + y_off >= 0) && (yd + y_off < height) && (x < width)) {
-                *ptr_radon_map->data(k, x) = img(x, yd + y_off);
-                nb_per_line[k] += 1;
-            }
-            if ((y_off - yd >= 0) && (y_off - yd < width) &&
-                (2 * y_off - x >= 0) && (2 * y_off - x < height) &&
-                (k != 3 * N / 4)) {
-                *ptr_radon_map->data(k - j, x) =
-                    img(-yd + y_off, -(x - y_off) + y_off);
-                nb_per_line[k - j] += 1;
-            }
-        }
-        j += 2;
     }
 
     return 0;
