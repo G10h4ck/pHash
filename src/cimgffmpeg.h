@@ -35,10 +35,9 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/imgutils.h>
 #include <libswscale/swscale.h>
 }
-
-using namespace cimg_library;
 
 typedef struct vf_info {
     int step;
@@ -50,16 +49,18 @@ typedef struct vf_info {
     long next_index;
     AVFormatContext *pFormatCtx;
     AVCodecContext *pCodecCtx;
-    AVCodec *pCodec;
+    const AVCodec *pCodec;
     const char *filename;
 } VFInfo;
 
 void vfinfo_close(VFInfo *vfinfo);
 
-int ReadFrames(VFInfo *st_info, CImgList<uint8_t> *pFrameList,
+int ReadFrames(VFInfo *st_info,
+               cimg_library::CImgList<uint8_t> *pFrameList,
                unsigned int low_index, unsigned int hi_index);
 
-int NextFrames(VFInfo *st_info, CImgList<uint8_t> *pFrameList);
+int NextFrames(VFInfo *st_info,
+               cimg_library::CImgList<uint8_t> *pFrameList);
 
 int GetNumberStreams(const char *file);
 
