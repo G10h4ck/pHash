@@ -25,10 +25,10 @@
 #ifndef _FFT_H
 #define _FFT_H
 
-#include <complex.h>
-#include <math.h>
-#include <stdlib.h>
-using namespace std;
-int fft(double *x, int N, complex<double> *X);
+#include <complex>
+#include <cmath>
+#include <cstdlib>
+
+int fft(double *x, int N, std::complex<double> *X);
 
 #endif
