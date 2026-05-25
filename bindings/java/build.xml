@@ -26,7 +26,6 @@
 	<javah destdir="." force="yes" verbose="yes" classpath="./build/classes/">
 	  
 	  <class name="org.pHash.pHash" />
-	  <class name="org.pHash.MVPTree" />
 	</javah>
   </target>
 </project>
