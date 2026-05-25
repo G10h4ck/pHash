@@ -335,16 +335,32 @@ float *ph_readaudio(const char *filename, int sr, int /*channels*/,
     return ph_readaudio2(filename, sr, sigbuf, buflen, nbsecs);
 }
 
+// Round target up to the nearest power of 2, then choose whichever of
+// {that, that/2} is closer to target. Used to size FFT frames given a
+// target duration. The custom radix-2 FFT in ph_fft requires a power
+// of 2.
+static int closest_pow2(double target) {
+    if (target <= 1.0) return 1;
+    int p = 1;
+    while ((double)p < target) p *= 2;
+    int prev = p / 2;
+    return (target - (double)prev) > ((double)p - target) ? p : prev;
+}
+
 uint32_t *ph_audiohash(float *buf, int N, int sr, int &nb_frames) {
     nb_frames = 0;
-    const int frame_length = 4096;
-    const int nfft = frame_length;
-    const int nfft_half = 2048;
-    if (buf == NULL || N < frame_length || sr <= 0) return NULL;
+    if (buf == NULL || sr <= 0) return NULL;
 
-    const int overlap = 31 * frame_length / 32;
-    const int advance = frame_length - overlap;
-    if (advance <= 0) return NULL;
+    // Haitsma-Kalker parameters: 0.37 s frames, 31.25 frames/sec
+    // (i.e. ~32 ms advance). Frame size is rounded to a power of 2
+    // because the bundled FFT is radix-2.
+    const int frame_length = closest_pow2((double)sr * 0.37);
+    const int nfft = frame_length;
+    const int nfft_half = frame_length / 2;
+    if (N < frame_length) return NULL;
+
+    int advance = (int)std::round((double)sr / 31.25);
+    if (advance <= 0) advance = 1;
 
     nb_frames = (N - frame_length) / advance + 1;
     if (nb_frames <= 0) {
@@ -361,8 +377,11 @@ uint32_t *ph_audiohash(float *buf, int N, int sr, int &nb_frames) {
     std::vector<std::complex<double>> pF(nfft);
     std::vector<double> magnF(nfft_half);
 
+    // Haitsma-Kalker: 33 log-spaced bands from 300 to 2000 Hz. The
+    // previous value of 3000 Hz extended the upper band by 1 kHz beyond
+    // the paper.
     const double minfreq = 300;
-    const double maxfreq = 3000;
+    const double maxfreq = 2000;
     const double minbark = 6 * asinh(minfreq / 600.0);
     const double maxbark = 6 * asinh(maxfreq / 600.0);
     const double nyqbark = maxbark - minbark;
