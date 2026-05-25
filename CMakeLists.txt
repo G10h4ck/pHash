@@ -1,13 +1,14 @@
-cmake_minimum_required (VERSION 2.8)
+cmake_minimum_required (VERSION 3.5)
 
 include(ExternalProject)
 include(GNUInstallDirs)
 
-project(pHash)
+project(pHash VERSION 1.0.0)
 set(CMAKE_MACOSX_RPATH 1)
-set(pHash_VERSION_MAJOR 1)
-set(pHash_VERSION_MINOR 0)
-set(pHash_VERSION_PATCH 0)
+set(pHash_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
+set(pHash_VERSION_MINOR ${PROJECT_VERSION_MINOR})
+set(pHash_VERSION_PATCH ${PROJECT_VERSION_PATCH})
+set(VERSION ${PROJECT_VERSION})
 
 OPTION(PHASH_DYNAMIC   "Build pHash dynamic library"                     ON)
 OPTION(PHASH_STATIC    "Build pHash static library"                     OFF)
@@ -30,6 +31,16 @@ find_path(CIMG_H_DIR NAMES CImg.h PATHS "${CMAKE_CURRENT_SOURCE_DIR}/third-party
 include_directories(${CIMG_H_DIR})
 
 CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/src/pHash.h.cmake ${CMAKE_CURRENT_SOURCE_DIR}/src/pHash.h)
+
+# Populate pHash.pc.in's @VERSION@/@prefix@/etc. so the installed pkg-config
+# file actually has a real version (the template was previously copied but
+# never configured).
+set(prefix ${CMAKE_INSTALL_PREFIX})
+set(exec_prefix ${CMAKE_INSTALL_PREFIX})
+set(libdir ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
+set(includedir ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR})
+CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/pHash.pc.in
+               ${CMAKE_CURRENT_BINARY_DIR}/pHash.pc @ONLY)
 
 
 if(NOT WIN32)
@@ -95,8 +106,10 @@ endif()
 set_property(TARGET pHash PROPERTY VERSION "${pHash_VERSION_MAJOR}.${pHash_VERSION_MINOR}.${pHash_VERSION_PATCH}")
 target_link_libraries(pHash ${LIBS_DEPS})
 
-install(TARGETS pHash DESTINATION ${LIBDIR})
-install(FILES src/pHash.h DESTINATION include)
+install(TARGETS pHash DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(FILES src/pHash.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/pHash.pc
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
 if(PHASH_EXAMPLES)
 set(EXAMPLEDIR examples)
