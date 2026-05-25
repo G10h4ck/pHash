@@ -28,6 +28,8 @@
 #endif
 
 #include <cmath>
+#include <map>
+#include <vector>
 
 const char phash_project[] = "%s. Copyright 2008-2010 Aetilius, Inc.";
 char phash_version[255] = {0};
@@ -709,142 +711,199 @@ double ph_hammingdistance2(uint8_t *hashA, int lenA, uint8_t *hashB, int lenB) {
     return dist / bits;
 }
 
+// Returns true if d is one of the characters fed into the rolling hash
+// (digit or lowercase letter), normalising the case in-place.
+static bool is_text_char(int &d) {
+    if (d <= 47) return false;
+    if ((d >= 58 && d <= 64) || (d >= 91 && d <= 96) || d >= 123) return false;
+    if (d >= 65 && d <= 90) d += 32;
+    return true;
+}
+
 TxtHashPoint *ph_texthash(const char *filename, int *nbpoints) {
-    int count;
-    TxtHashPoint *TxtHash = NULL;
-    TxtHashPoint WinHash[WindowLength];
-    char kgram[KgramLength];
+    if (filename == NULL || nbpoints == NULL) return NULL;
+    *nbpoints = 0;
+
+    unsigned char kgram[KgramLength];
 
     FILE *pfile = fopen(filename, "r");
     if (!pfile) {
         return NULL;
     }
-    struct stat fileinfo;
-    fstat(fileno(pfile), &fileinfo);
-    count = fileinfo.st_size - WindowLength + 1;
-    count = (int)(0.01 * count);
-    int d;
-    ulong64 hashword = 0ULL;
 
-    TxtHash = (TxtHashPoint *)malloc(count * sizeof(struct ph_hash_point));
-    if (!TxtHash) {
+    // Growable output buffer (doubled on overflow). Start with a small
+    // estimate based on Schleimer's expected density of 2/(w+1) selected
+    // fingerprints per k-gram (Lemma 3.1 of the winnowing paper); the
+    // worst case is one per k-gram but that's rare on real text.
+    struct stat fileinfo;
+    if (fstat(fileno(pfile), &fileinfo) != 0 || fileinfo.st_size <= 0) {
+        fclose(pfile);
         return NULL;
     }
-    *nbpoints = 0;
-    int i, first = 0, last = KgramLength - 1;
+    size_t capacity = (size_t)fileinfo.st_size / WindowLength * 4 + 64;
+    TxtHashPoint *TxtHash =
+        (TxtHashPoint *)malloc(capacity * sizeof(struct ph_hash_point));
+    if (!TxtHash) {
+        fclose(pfile);
+        return NULL;
+    }
+
+    int d;
+    ulong64 hashword = 0ULL;
+    int first = 0, last = KgramLength - 1;
     int text_index = 0;
-    int win_index = 0;
-    for (i = 0; i < KgramLength; i++) { /* calc first kgram */
+    int valid_count = 0;
+
+    // Fill the first kgram with KgramLength *valid* characters.
+    while (valid_count < KgramLength) {
         d = fgetc(pfile);
         if (d == EOF) {
             free(TxtHash);
+            fclose(pfile);
             return NULL;
         }
-        if (d <= 47) /*skip cntrl chars*/
-            continue;
-        if (((d >= 58) && (d <= 64)) || ((d >= 91) && (d <= 96)) ||
-            (d >= 123)) /*skip punct*/
-            continue;
-        if ((d >= 65) && (d <= 90)) /*convert upper to lower case */
-            d = d + 32;
+        text_index++;
+        if (!is_text_char(d)) continue;
 
-        kgram[i] = (char)d;
-        hashword = hashword << delta;      /* rotate left or shift left ??? */
-        hashword = hashword ^ textkeys[d]; /* right now, rotate breaks it */
+        kgram[valid_count++] = (unsigned char)d;
+        hashword = hashword << delta;
+        hashword = hashword ^ textkeys[(unsigned char)d];
     }
 
-    WinHash[win_index].hash = hashword;
-    WinHash[win_index++].index = text_index;
-    struct ph_hash_point minhash;
-    minhash.hash = ULLONG_MAX;
-    minhash.index = 0;
-    struct ph_hash_point prev_minhash;
-    prev_minhash.hash = ULLONG_MAX;
-    prev_minhash.index = 0;
+    // Sliding-window winnowing per Schleimer/Wilkerson/Aiken 2003.
+    // The previous implementation used a tumbling window (jumping the
+    // window by WindowLength k-grams each emit), which loses the paper's
+    // matching guarantee: any duplicate substring of length >= k + w - 1
+    // is supposed to produce at least one identical fingerprint, but with
+    // tumbling windows a duplicate straddling a window boundary can be
+    // missed.
+    //
+    // We maintain a monotonic deque of (hash, text_index, kgram_pos)
+    // entries with hashes strictly increasing from front to back. The
+    // front is therefore the minimum hash in the current window. On each
+    // new k-gram we (a) pop back entries with hash >= new hash (so a
+    // later equal value replaces an earlier one, giving the right-most
+    // minimum on ties as the paper specifies), (b) push the new entry,
+    // (c) drop the front if it has slid out of the window, (d) emit the
+    // current front if its k-gram position differs from the last emitted.
+    struct deque_entry {
+        ulong64 hash;
+        off_t text_index;
+        int kgram_pos;
+    };
+    std::vector<deque_entry> dq;
+    dq.reserve((size_t)WindowLength);
 
-    while ((d = fgetc(pfile)) != EOF) { /*remaining kgrams */
-        text_index++;
-        if (d == EOF) {
-            free(TxtHash);
-            return NULL;
+    int kgram_pos = 0;
+    int prev_emitted_pos = -1;
+    long long emits = 0;
+
+    auto push_kgram = [&](ulong64 h, off_t ti) {
+        // (a) maintain monotonic increasing back -> front
+        while (!dq.empty() && dq.back().hash >= h) dq.pop_back();
+        // (b) append
+        deque_entry e = {h, ti, kgram_pos};
+        dq.push_back(e);
+        // (c) drop entries that fell out of the window
+        while (!dq.empty() && dq.front().kgram_pos <= kgram_pos - WindowLength) {
+            dq.erase(dq.begin());
         }
-        if (d <= 47) /*skip cntrl chars*/
-            continue;
-        if (((d >= 58) && (d <= 64)) || ((d >= 91) && (d <= 96)) ||
-            (d >= 123)) /*skip punct*/
-            continue;
-        if ((d >= 65) && (d <= 90)) /*convert upper to lower case */
-            d = d + 32;
+    };
+
+    push_kgram(hashword, text_index);
+    // The first window completes at kgram_pos = WindowLength - 1.
+
+    while ((d = fgetc(pfile)) != EOF) {
+        text_index++;
+        if (!is_text_char(d)) continue;
 
         ulong64 oldsym = textkeys[kgram[first % KgramLength]];
-
-        /* rotate or left shift ??? */
-        /* right now, rotate breaks it */
-        oldsym = oldsym << delta * KgramLength;
+        oldsym = oldsym << (delta * KgramLength);
         hashword = hashword << delta;
-        hashword = hashword ^ textkeys[d];
+        hashword = hashword ^ textkeys[(unsigned char)d];
         hashword = hashword ^ oldsym;
-        kgram[last % KgramLength] = (char)d;
+        kgram[last % KgramLength] = (unsigned char)d;
         first++;
         last++;
+        kgram_pos++;
 
-        WinHash[win_index % WindowLength].hash = hashword;
-        WinHash[win_index % WindowLength].index = text_index;
-        win_index++;
+        push_kgram(hashword, text_index);
 
-        if (win_index >= WindowLength) {
-            minhash.hash = ULLONG_MAX;
-            for (i = win_index; i < win_index + WindowLength; i++) {
-                if (WinHash[i % WindowLength].hash <= minhash.hash) {
-                    minhash.hash = WinHash[i % WindowLength].hash;
-                    minhash.index = WinHash[i % WindowLength].index;
+        // (d) emit if the window is full and the current min position
+        // differs from the last emitted.
+        if (kgram_pos >= WindowLength - 1) {
+            const deque_entry &m = dq.front();
+            if (m.kgram_pos != prev_emitted_pos) {
+                if ((size_t)emits >= capacity) {
+                    size_t new_cap = capacity * 2;
+                    TxtHashPoint *tmp = (TxtHashPoint *)realloc(
+                        TxtHash, new_cap * sizeof(struct ph_hash_point));
+                    if (!tmp) {
+                        free(TxtHash);
+                        fclose(pfile);
+                        *nbpoints = 0;
+                        return NULL;
+                    }
+                    TxtHash = tmp;
+                    capacity = new_cap;
                 }
+                TxtHash[emits].hash = m.hash;
+                TxtHash[emits].index = m.text_index;
+                emits++;
+                prev_emitted_pos = m.kgram_pos;
             }
-            if (minhash.hash != prev_minhash.hash) {
-                TxtHash[(*nbpoints)].hash = minhash.hash;
-                TxtHash[(*nbpoints)++].index = minhash.index;
-                prev_minhash.hash = minhash.hash;
-                prev_minhash.index = minhash.index;
-
-            } else {
-                TxtHash[*nbpoints].hash = prev_minhash.hash;
-                TxtHash[(*nbpoints)++].index = prev_minhash.index;
-            }
-            win_index = 0;
         }
     }
 
+    *nbpoints = (int)emits;
     fclose(pfile);
     return TxtHash;
 }
 
 TxtMatch *ph_compare_text_hashes(TxtHashPoint *hash1, int N1,
-                                 TxtHashPoint *hash2, int N2, int *nbmatches) {
+                                 TxtHashPoint *hash2, int N2,
+                                 int *nbmatches) {
+    if (nbmatches == NULL) return NULL;
+    *nbmatches = 0;
+    if (hash1 == NULL || hash2 == NULL || N1 <= 0 || N2 <= 0) return NULL;
+
     int max_matches = (N1 >= N2) ? N1 : N2;
     TxtMatch *found_matches =
-        (TxtMatch *)malloc(max_matches * sizeof(TxtMatch));
+        (TxtMatch *)malloc((size_t)max_matches * sizeof(TxtMatch));
     if (!found_matches) {
         return NULL;
     }
 
-    *nbmatches = 0;
-    int i, j;
-    for (i = 0; i < N1; i++) {
-        for (j = 0; j < N2; j++) {
-            if (hash1[i].hash == hash2[j].hash) {
-                int m = i + 1;
-                int n = j + 1;
-                int cnt = 1;
-                while ((m < N1) && (n < N2) &&
-                       (hash1[m++].hash == hash2[n++].hash)) {
-                    cnt++;
-                }
-                found_matches[*nbmatches].first_index = i;
-                found_matches[*nbmatches].second_index = j;
-                found_matches[*nbmatches].length = cnt;
-                (*nbmatches)++;
+    // Build a hash -> vector<index> index over hash2 so the outer scan over
+    // hash1 only inspects matching positions. Reduces the worst case from
+    // O(N1*N2*min(N1,N2)) to O((N1+N2)*L) where L is the average extension
+    // length.
+    std::map<ulong64, std::vector<int>> hash2_index;
+    for (int j = 0; j < N2; j++) {
+        hash2_index[hash2[j].hash].push_back(j);
+    }
+
+    for (int i = 0; i < N1; i++) {
+        std::map<ulong64, std::vector<int>>::const_iterator it =
+            hash2_index.find(hash1[i].hash);
+        if (it == hash2_index.end()) continue;
+        for (size_t k = 0; k < it->second.size(); k++) {
+            int j = it->second[k];
+            int m = i + 1;
+            int n = j + 1;
+            int cnt = 1;
+            while (m < N1 && n < N2 && hash1[m].hash == hash2[n].hash) {
+                cnt++;
+                m++;
+                n++;
             }
+            if (*nbmatches >= max_matches) goto done;
+            found_matches[*nbmatches].first_index = i;
+            found_matches[*nbmatches].second_index = j;
+            found_matches[*nbmatches].length = cnt;
+            (*nbmatches)++;
         }
     }
+done:
     return found_matches;
 }
