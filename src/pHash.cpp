@@ -392,11 +392,22 @@ int ph_dct_imagehash(const char *file, ulong64 &hash) {
 
     CImg<float> dctImage = C * img * Ctransp;
 
-    CImg<float> subsec = dctImage.crop(1, 1, 8, 8).unroll('x');
+    // Canonical pHash (Krawetz "Looks Like It" / Zauner 2010): take the
+    // top-left 8x8 block of the DCT and bit-test each coefficient against
+    // the median of the *other 63*, excluding the DC term at (0,0).
+    //
+    // Earlier versions of this code took (1,1)..(8,8), skipping the entire
+    // first row and column of low frequencies (incompatible with every
+    // other library that calls itself pHash), then took the median over
+    // all 64 values. Including DC in the median was problematic too:
+    // |DC| is typically 10-100x larger than any AC coefficient, so its
+    // hash bit was effectively always 1, wasting one of the 64 hash bits.
+    CImg<float> subsec = dctImage.crop(0, 0, 7, 7).unroll('x');
 
-    float median = subsec.median();
-    // Build hash so that sample i lives in bit (63 - i). The previous version
-    // shifted *after* every iteration including the last, dropping bit 0.
+    // Median of the 63 AC coefficients (positions 1..63). Skipping DC
+    // here means none of the 64 emitted bits is a foregone conclusion.
+    CImg<float> ac = subsec.get_crop(1, 0, 0, 0, 63, 0, 0, 0);
+    float median = ac.median();
     hash = 0;
     for (int i = 0; i < 64; i++) {
         if (subsec(i) > median) hash |= 0x01;
@@ -615,8 +626,11 @@ ulong64 *ph_dct_videohash(const char *filename, int &Length) {
         currentframe = keyframes->at(i);
         currentframe.blur(1.0);
         dctImage = C * currentframe * Ctransp;
-        subsec = dctImage.crop(1, 1, 8, 8).unroll('x');
-        float med = subsec.median();
+        // Match ph_dct_imagehash: canonical top-left 8x8 of the DCT,
+        // median over the 63 AC coefficients (skip DC at position 0).
+        subsec = dctImage.crop(0, 0, 7, 7).unroll('x');
+        CImg<float> ac = subsec.get_crop(1, 0, 0, 0, 63, 0, 0, 0);
+        float med = ac.median();
         hash[i] = 0x0000000000000000;
         ulong64 one = 0x0000000000000001;
         for (int j = 0; j < 64; j++) {
