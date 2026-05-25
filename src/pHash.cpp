@@ -812,6 +812,63 @@ uint8_t *ph_mh_imagehash_from_buffer(const CImg<uint8_t> &img, int &N,
 
     return hash;
 }
+
+// C-callable wrapper: build a CImg from a raw interleaved pixel buffer,
+// apply the same preprocessing as the file-based ph_mh_imagehash
+// (RGBtoYCbCr -> luminance -> blur -> resize 512x512 -> equalize),
+// then delegate to ph_mh_imagehash_from_buffer.
+//
+// Exists so language bindings (Java JNI, C# P/Invoke, etc.) can hash an
+// image they hold in memory without round-tripping through a temp file.
+// Layout expected:
+//   - pixels: interleaved, row-major; for channels=3 this is RGB,RGB,RGB...
+//     for channels=4 it is RGBA,RGBA,...; for channels=1 it is luminance.
+//   - width / height: pixel dimensions
+//   - channels: 1, 3, or 4 (4-channel input is treated as RGB with the alpha
+//     channel discarded, matching ph_dct_imagehash's handling)
+uint8_t *ph_mh_imagehash_from_pixels(const uint8_t *pixels, int width,
+                                     int height, int channels, int *N,
+                                     float alpha, float lvl) {
+    if (N == NULL) return NULL;
+    *N = 0;
+    if (pixels == NULL || width <= 0 || height <= 0) return NULL;
+    if (channels != 1 && channels != 3 && channels != 4) return NULL;
+
+    CImg<uint8_t> src;
+    try {
+        // Interleaved -> planar conversion (CImg stores planar by default).
+        // Construct with (channels, width, height) so channels is the
+        // fastest-varying dimension matching the input layout, then permute
+        // to put channels on the proper c axis. Same trick used in
+        // cimgffmpeg.cpp's ReadFrames.
+        CImg<uint8_t> interleaved(pixels, channels, width, height, 1, false);
+        src = interleaved.get_permute_axes("yzcx");
+    } catch (...) {
+        return NULL;
+    }
+
+    CImg<uint8_t> img;
+    try {
+        if (src.spectrum() >= 3) {
+            // RGB or RGBA: drop any alpha, take Y from YCbCr.
+            img = src.get_channels(0, 2)
+                      .RGBtoYCbCr()
+                      .channel(0)
+                      .blur(1.0)
+                      .resize(512, 512, 1, 1, 5)
+                      .get_equalize(256);
+        } else {
+            img = src.get_channel(0)
+                      .blur(1.0)
+                      .resize(512, 512, 1, 1, 5)
+                      .get_equalize(256);
+        }
+    } catch (...) {
+        return NULL;
+    }
+
+    return ph_mh_imagehash_from_buffer(img, *N, alpha, lvl);
+}
 #endif
 
 int ph_bitcount8(uint8_t val) {

@@ -275,6 +275,24 @@ uint8_t* ph_mh_imagehash(const char *filename, int &N, float alpha=2.0f, float l
 **/
 uint8_t* ph_mh_imagehash_from_buffer(const CImg<uint8_t> &img, int &N, float alpha=2.0f, float lvl = 1.0f);
 
+/** /brief create MH image hash from raw interleaved pixels.
+ *  C-callable variant intended for language bindings (Java JNI, C# P/Invoke,
+ *  etc.) that already hold an image in memory. Internally constructs a CImg
+ *  from the pixel buffer, applies the same preprocessing as ph_mh_imagehash,
+ *  and delegates to ph_mh_imagehash_from_buffer.
+*   /param pixels   - row-major interleaved pixel buffer (channels=1: luminance;
+*                     channels=3: RGB; channels=4: RGBA, alpha discarded).
+*                     Caller-owned, not modified.
+*   /param width    - image width in pixels
+*   /param height   - image height in pixels
+*   /param channels - 1, 3, or 4
+*   /param N        - (out) length of returned hash, 72 on success, 0 on failure
+*   /param alpha    - scale factor for marr wavelet (default=2)
+*   /param lvl      - level of scale factor (default=1)
+*   /return newly-allocated uint8_t[N] array (caller frees), or NULL on error
+**/
+uint8_t* ph_mh_imagehash_from_pixels(const uint8_t *pixels, int width, int height, int channels, int *N, float alpha=2.0f, float lvl=1.0f);
+
 /** /brief count number bits set in given byte
 *   /param val - uint8_t byte value
 *   /return int value for number of bits set
