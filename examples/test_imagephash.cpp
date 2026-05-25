@@ -24,6 +24,7 @@
 
 #include <dirent.h>
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <algorithm>
 #include <vector>
@@ -86,63 +87,73 @@ int main(int argc, char **argv) {
     errno = 0;
     int i = 0;
     ulong64 tmphash;
-    char path[100];
-    path[0] = '\0';
+    char path[PATH_MAX];
     while ((dir_entry = readdir(dir)) != 0) {
         if (strcmp(dir_entry->d_name, ".") && strcmp(dir_entry->d_name, "..")) {
-            strcat(path, dir_name);
-            strcat(path, "/");
-            strcat(path, dir_entry->d_name);
-            if (ph_dct_imagehash(path, tmphash) < 0)  // calculate the hash
+            int n = snprintf(path, sizeof(path), "%s/%s", dir_name,
+                             dir_entry->d_name);
+            if (n < 0 || (size_t)n >= sizeof(path)) {
+                fprintf(stderr, "path too long, skipping %s\n",
+                        dir_entry->d_name);
+                errno = 0;
                 continue;
-            dp = ph_malloc_imagepoint();  // store in structure with file name
+            }
+            if (ph_dct_imagehash(path, tmphash) < 0)
+                continue;
+            dp = ph_malloc_imagepoint();
             dp->id = dir_entry->d_name;
             dp->hash = tmphash;
             hashlist1.push_back(*dp);
             i++;
         }
         errno = 0;
-        path[0] = '\0';
     }
 
     if (errno) {
         printf("error reading directory\n");
+        closedir(dir);
         exit(1);
     }
+    closedir(dir);
 
     sort(hashlist1.begin(), hashlist1.end(), cmp_lt_imp);
 
     // second directory
     dir_entry = NULL;
     DIR *dir2 = opendir(dir_name2);
-    if (!dir) {
+    if (!dir2) {
         printf("unable to open directory\n");
         exit(1);
     }
     errno = 0;
-    path[0] = '\0';
     i = 0;
     while ((dir_entry = readdir(dir2)) != 0) {
         if (strcmp(dir_entry->d_name, ".") && strcmp(dir_entry->d_name, "..")) {
-            strcat(path, dir_name2);
-            strcat(path, "/");
-            strcat(path, dir_entry->d_name);
-            if (ph_dct_imagehash(path, tmphash) < 0)  // calculate the hash
+            int n = snprintf(path, sizeof(path), "%s/%s", dir_name2,
+                             dir_entry->d_name);
+            if (n < 0 || (size_t)n >= sizeof(path)) {
+                fprintf(stderr, "path too long, skipping %s\n",
+                        dir_entry->d_name);
+                errno = 0;
                 continue;
-            dp = ph_malloc_imagepoint();  // store in structure with filename
+            }
+            if (ph_dct_imagehash(path, tmphash) < 0)
+                continue;
+            dp = ph_malloc_imagepoint();
             dp->id = dir_entry->d_name;
             dp->hash = tmphash;
             hashlist2.push_back(*dp);
             i++;
         }
         errno = 0;
-        path[0] = '\0';
     }
 
     if (errno) {
         printf("error reading directory\n");
+        closedir(dir2);
         exit(1);
     }
+    closedir(dir2);
 
     sort(hashlist2.begin(), hashlist2.end(), cmp_lt_imp);
 

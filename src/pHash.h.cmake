@@ -74,7 +74,10 @@ using namespace cimg_library;
 
 #endif
 
-using namespace std;
+// Note: a `using namespace std;` used to live here, polluting every
+// translation unit that included pHash.h. It has been removed since none
+// of the declarations in this header actually depend on std::. Callers
+// that relied on it can add their own `using namespace std;` locally.
 
 #define SQRT_TWO 1.4142135623730950488016887242097
 
@@ -233,7 +236,10 @@ int ph_dct_imagehash(const char* file,ulong64 &hash);
 
 
 #ifdef HAVE_VIDEO_HASH
-static CImgList<uint8_t>* ph_getKeyFramesFromVideo(const char *filename);
+// Note: this used to be declared `static` here while being defined as an
+// extern symbol in pHash.cpp -- a one-definition-rule landmine. The function
+// is an implementation detail of ph_dct_videohash and is not exposed.
+CImgList<uint8_t>* ph_getKeyFramesFromVideo(const char *filename);
 
 ulong64* ph_dct_videohash(const char *filename, int &Length);
 
