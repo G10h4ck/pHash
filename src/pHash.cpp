@@ -28,6 +28,8 @@
 #endif
 
 #include <cmath>
+#include <map>
+#include <vector>
 
 const char phash_project[] = "%s. Copyright 2008-2010 Aetilius, Inc.";
 char phash_version[255] = {0};
@@ -709,82 +711,88 @@ double ph_hammingdistance2(uint8_t *hashA, int lenA, uint8_t *hashB, int lenB) {
     return dist / bits;
 }
 
+// Returns true if d is one of the characters fed into the rolling hash
+// (digit or lowercase letter), normalising the case in-place.
+static bool is_text_char(int &d) {
+    if (d <= 47) return false;
+    if ((d >= 58 && d <= 64) || (d >= 91 && d <= 96) || d >= 123) return false;
+    if (d >= 65 && d <= 90) d += 32;
+    return true;
+}
+
 TxtHashPoint *ph_texthash(const char *filename, int *nbpoints) {
-    int count;
-    TxtHashPoint *TxtHash = NULL;
+    if (filename == NULL || nbpoints == NULL) return NULL;
+    *nbpoints = 0;
+
     TxtHashPoint WinHash[WindowLength];
-    char kgram[KgramLength];
+    unsigned char kgram[KgramLength];
 
     FILE *pfile = fopen(filename, "r");
     if (!pfile) {
         return NULL;
     }
-    struct stat fileinfo;
-    fstat(fileno(pfile), &fileinfo);
-    count = fileinfo.st_size - WindowLength + 1;
-    count = (int)(0.01 * count);
-    int d;
-    ulong64 hashword = 0ULL;
 
-    TxtHash = (TxtHashPoint *)malloc(count * sizeof(struct ph_hash_point));
-    if (!TxtHash) {
+    struct stat fileinfo;
+    if (fstat(fileno(pfile), &fileinfo) != 0 || fileinfo.st_size <= 0) {
+        fclose(pfile);
         return NULL;
     }
-    *nbpoints = 0;
-    int i, first = 0, last = KgramLength - 1;
+
+    // Upper bound on hash points emitted. Each yields one entry per
+    // WindowLength valid characters processed, so file_size/WindowLength is
+    // a safe ceiling; previously this could underflow to a negative
+    // count for files smaller than WindowLength and turn the malloc into a
+    // multi-gigabyte allocation.
+    size_t count = (size_t)fileinfo.st_size / WindowLength + 1;
+    TxtHashPoint *TxtHash =
+        (TxtHashPoint *)malloc(count * sizeof(struct ph_hash_point));
+    if (!TxtHash) {
+        fclose(pfile);
+        return NULL;
+    }
+
+    int d;
+    ulong64 hashword = 0ULL;
+    int first = 0, last = KgramLength - 1;
     int text_index = 0;
     int win_index = 0;
-    for (i = 0; i < KgramLength; i++) { /* calc first kgram */
+    int valid_count = 0;
+
+    // Fill the first kgram with KgramLength *valid* characters. The previous
+    // version used a for-loop with `continue` on skips, which still ran the
+    // `i++` step -- so any skipped position left kgram[i] uninitialised and
+    // later got read by the rolling hash.
+    while (valid_count < KgramLength) {
         d = fgetc(pfile);
         if (d == EOF) {
             free(TxtHash);
+            fclose(pfile);
             return NULL;
         }
-        if (d <= 47) /*skip cntrl chars*/
-            continue;
-        if (((d >= 58) && (d <= 64)) || ((d >= 91) && (d <= 96)) ||
-            (d >= 123)) /*skip punct*/
-            continue;
-        if ((d >= 65) && (d <= 90)) /*convert upper to lower case */
-            d = d + 32;
+        text_index++;
+        if (!is_text_char(d)) continue;
 
-        kgram[i] = (char)d;
-        hashword = hashword << delta;      /* rotate left or shift left ??? */
-        hashword = hashword ^ textkeys[d]; /* right now, rotate breaks it */
+        kgram[valid_count++] = (unsigned char)d;
+        hashword = hashword << delta;
+        hashword = hashword ^ textkeys[(unsigned char)d];
     }
 
     WinHash[win_index].hash = hashword;
     WinHash[win_index++].index = text_index;
-    struct ph_hash_point minhash;
-    minhash.hash = ULLONG_MAX;
-    minhash.index = 0;
-    struct ph_hash_point prev_minhash;
-    prev_minhash.hash = ULLONG_MAX;
-    prev_minhash.index = 0;
+    struct ph_hash_point minhash = {ULLONG_MAX, 0};
+    struct ph_hash_point prev_minhash = {ULLONG_MAX, 0};
 
-    while ((d = fgetc(pfile)) != EOF) { /*remaining kgrams */
+    while ((d = fgetc(pfile)) != EOF) {
         text_index++;
-        if (d == EOF) {
-            free(TxtHash);
-            return NULL;
-        }
-        if (d <= 47) /*skip cntrl chars*/
-            continue;
-        if (((d >= 58) && (d <= 64)) || ((d >= 91) && (d <= 96)) ||
-            (d >= 123)) /*skip punct*/
-            continue;
-        if ((d >= 65) && (d <= 90)) /*convert upper to lower case */
-            d = d + 32;
+        if (!is_text_char(d)) continue;
 
+        // Rolling hash: remove the contribution of the oldest character.
         ulong64 oldsym = textkeys[kgram[first % KgramLength]];
-
-        /* rotate or left shift ??? */
-        /* right now, rotate breaks it */
-        oldsym = oldsym << delta * KgramLength;
+        oldsym = oldsym << (delta * KgramLength);
         hashword = hashword << delta;
-        hashword = hashword ^ textkeys[d];
+        hashword = hashword ^ textkeys[(unsigned char)d];
         hashword = hashword ^ oldsym;
-        kgram[last % KgramLength] = (char)d;
+        kgram[last % KgramLength] = (unsigned char)d;
         first++;
         last++;
 
@@ -794,18 +802,21 @@ TxtHashPoint *ph_texthash(const char *filename, int *nbpoints) {
 
         if (win_index >= WindowLength) {
             minhash.hash = ULLONG_MAX;
-            for (i = win_index; i < win_index + WindowLength; i++) {
+            for (int i = win_index; i < win_index + WindowLength; i++) {
                 if (WinHash[i % WindowLength].hash <= minhash.hash) {
                     minhash.hash = WinHash[i % WindowLength].hash;
                     minhash.index = WinHash[i % WindowLength].index;
                 }
             }
+            if ((size_t)*nbpoints >= count) {
+                // Shouldn't happen given the ceiling above, but guard
+                // against an exotic stat / lseek interaction.
+                break;
+            }
             if (minhash.hash != prev_minhash.hash) {
-                TxtHash[(*nbpoints)].hash = minhash.hash;
+                TxtHash[*nbpoints].hash = minhash.hash;
                 TxtHash[(*nbpoints)++].index = minhash.index;
-                prev_minhash.hash = minhash.hash;
-                prev_minhash.index = minhash.index;
-
+                prev_minhash = minhash;
             } else {
                 TxtHash[*nbpoints].hash = prev_minhash.hash;
                 TxtHash[(*nbpoints)++].index = prev_minhash.index;
@@ -819,32 +830,49 @@ TxtHashPoint *ph_texthash(const char *filename, int *nbpoints) {
 }
 
 TxtMatch *ph_compare_text_hashes(TxtHashPoint *hash1, int N1,
-                                 TxtHashPoint *hash2, int N2, int *nbmatches) {
+                                 TxtHashPoint *hash2, int N2,
+                                 int *nbmatches) {
+    if (nbmatches == NULL) return NULL;
+    *nbmatches = 0;
+    if (hash1 == NULL || hash2 == NULL || N1 <= 0 || N2 <= 0) return NULL;
+
     int max_matches = (N1 >= N2) ? N1 : N2;
     TxtMatch *found_matches =
-        (TxtMatch *)malloc(max_matches * sizeof(TxtMatch));
+        (TxtMatch *)malloc((size_t)max_matches * sizeof(TxtMatch));
     if (!found_matches) {
         return NULL;
     }
 
-    *nbmatches = 0;
-    int i, j;
-    for (i = 0; i < N1; i++) {
-        for (j = 0; j < N2; j++) {
-            if (hash1[i].hash == hash2[j].hash) {
-                int m = i + 1;
-                int n = j + 1;
-                int cnt = 1;
-                while ((m < N1) && (n < N2) &&
-                       (hash1[m++].hash == hash2[n++].hash)) {
-                    cnt++;
-                }
-                found_matches[*nbmatches].first_index = i;
-                found_matches[*nbmatches].second_index = j;
-                found_matches[*nbmatches].length = cnt;
-                (*nbmatches)++;
+    // Build a hash -> vector<index> index over hash2 so the outer scan over
+    // hash1 only inspects matching positions. Reduces the worst case from
+    // O(N1*N2*min(N1,N2)) to O((N1+N2)*L) where L is the average extension
+    // length.
+    std::map<ulong64, std::vector<int>> hash2_index;
+    for (int j = 0; j < N2; j++) {
+        hash2_index[hash2[j].hash].push_back(j);
+    }
+
+    for (int i = 0; i < N1; i++) {
+        std::map<ulong64, std::vector<int>>::const_iterator it =
+            hash2_index.find(hash1[i].hash);
+        if (it == hash2_index.end()) continue;
+        for (size_t k = 0; k < it->second.size(); k++) {
+            int j = it->second[k];
+            int m = i + 1;
+            int n = j + 1;
+            int cnt = 1;
+            while (m < N1 && n < N2 && hash1[m].hash == hash2[n].hash) {
+                cnt++;
+                m++;
+                n++;
             }
+            if (*nbmatches >= max_matches) goto done;
+            found_matches[*nbmatches].first_index = i;
+            found_matches[*nbmatches].second_index = j;
+            found_matches[*nbmatches].length = cnt;
+            (*nbmatches)++;
         }
     }
+done:
     return found_matches;
 }
