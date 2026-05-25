@@ -279,10 +279,17 @@ int _ph_image_digest(const CImg<uint8_t> &img, double sigma, double gamma,
     int result = -1;
 
     CImg<uint8_t> graysc;
-    if (img.spectrum() >= 3) {
+    if (img.spectrum() == 3) {
         graysc = img.get_RGBtoYCbCr().channel(0);
-    } else if (img.spectrum() == 1) {
-        graysc = img;
+    } else if (img.spectrum() > 3) {
+        // RGBA (or wider): drop alpha and any extra channels before
+        // RGBtoYCbCr, which requires exactly 3 channels and would
+        // otherwise throw CImgInstanceException (issue #39).
+        graysc = img.get_channels(0, 2).RGBtoYCbCr().channel(0);
+    } else if (img.spectrum() == 1 || img.spectrum() == 2) {
+        // 1-channel grayscale or 2-channel gray+alpha: just take the
+        // luminance channel.
+        graysc = img.get_channel(0);
     } else {
         return -1;
     }
@@ -748,9 +755,21 @@ uint8_t *ph_mh_imagehash(const char *filename, int &N, float alpha, float lvl) {
                   .blur(1.0)
                   .resize(512, 512, 1, 1, 5)
                   .get_equalize(256);
+    } else if (src.spectrum() > 3) {
+        // RGBA (or wider): drop alpha and any extra channels before
+        // RGBtoYCbCr, which requires exactly 3 channels. Without this,
+        // a 4-channel PNG would throw CImgInstanceException inside this
+        // function (the same issue #39 / PR #40 fixes in
+        // _ph_image_digest).
+        img = src.get_channels(0, 2)
+                  .RGBtoYCbCr()
+                  .channel(0)
+                  .blur(1.0)
+                  .resize(512, 512, 1, 1, 5)
+                  .get_equalize(256);
     } else {
-        img = src.channel(0)
-                  .get_blur(1.0)
+        img = src.get_channel(0)
+                  .blur(1.0)
                   .resize(512, 512, 1, 1, 5)
                   .get_equalize(256);
     }
