@@ -12,14 +12,8 @@
    +----------------------------------------------------------------------+
 */
 
-/* $ Id: $ */
-
 #ifndef PHP_PHASH_H
 #define PHP_PHASH_H
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -28,19 +22,16 @@ extern "C" {
 #include <php.h>
 
 #ifdef HAVE_PHASH
-#define PHP_PHASH_VERSION "0.9.2"
+#define PHP_PHASH_VERSION "1.0.0"
 
 #include <SAPI.h>
 #include <Zend/zend_extensions.h>
 #include <php_ini.h>
 #include <ext/standard/info.h>
-#ifdef __cplusplus
-}  // extern "C"
-#endif
-#include <audiophash.h>
+
 #include <pHash.h>
-#ifdef __cplusplus
-extern "C" {
+#ifdef HAVE_AUDIO_HASH
+#include <audiophash.h>
 #endif
 
 extern zend_module_entry pHash_module_entry;
@@ -58,153 +49,115 @@ PHP_RINIT_FUNCTION(pHash);
 PHP_RSHUTDOWN_FUNCTION(pHash);
 PHP_MINFO_FUNCTION(pHash);
 
-#ifdef ZTS
-#include "TSRM.h"
-#endif
+/* ------------------------------------------------------------------ */
+/* arg_info -- PHP 8.x ZEND_ARG_*_INFO style                          */
+/* ------------------------------------------------------------------ */
 
-#define FREE_RESOURCE(resource) zend_list_delete(Z_LVAL_P(resource))
-
-#define PROP_GET_LONG(name)                                                 \
-    Z_LVAL_P(zend_read_property(_this_ce, _this_zval, #name, strlen(#name), \
-                                1 TSRMLS_CC))
-#define PROP_SET_LONG(name, l)                                            \
-    zend_update_property_long(_this_ce, _this_zval, #name, strlen(#name), \
-                              l TSRMLS_CC)
-
-#define PROP_GET_DOUBLE(name)                                               \
-    Z_DVAL_P(zend_read_property(_this_ce, _this_zval, #name, strlen(#name), \
-                                1 TSRMLS_CC))
-#define PROP_SET_DOUBLE(name, d)                                            \
-    zend_update_property_double(_this_ce, _this_zval, #name, strlen(#name), \
-                                d TSRMLS_CC)
-
-#define PROP_GET_STRING(name)                                                 \
-    Z_STRVAL_P(zend_read_property(_this_ce, _this_zval, #name, strlen(#name), \
-                                  1 TSRMLS_CC))
-#define PROP_GET_STRLEN(name)                                                 \
-    Z_STRLEN_P(zend_read_property(_this_ce, _this_zval, #name, strlen(#name), \
-                                  1 TSRMLS_CC))
-#define PROP_SET_STRING(name, s)                                            \
-    zend_update_property_string(_this_ce, _this_zval, #name, strlen(#name), \
-                                s TSRMLS_CC)
-#define PROP_SET_STRINGL(name, s, l)                                         \
-    zend_update_property_stringl(_this_ce, _this_zval, #name, strlen(#name), \
-                                 s, l TSRMLS_CC)
-
-#if HAVE_VIDEO_HASH
+#ifdef HAVE_VIDEO_HASH
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(ph_dct_videohash_arg_info, 0, 1, IS_MIXED, 0)
+    ZEND_ARG_TYPE_INFO(0, file, IS_STRING, 0)
+ZEND_END_ARG_INFO()
 PHP_FUNCTION(ph_dct_videohash);
-#if (PHP_MAJOR_VERSION >= 5)
-ZEND_BEGIN_ARG_INFO_EX(ph_dct_videohash_arg_info, ZEND_SEND_BY_VAL,
-                       ZEND_RETURN_VALUE, 1)
-ZEND_ARG_INFO(0, file)
-ZEND_END_ARG_INFO()
-#else /* PHP 4.x */
-#define ph_dct_videohash_arg_info NULL
-#endif
 
-#endif /* HAVE_VIDEO_HASH */
-#if HAVE_IMAGE_HASH
-PHP_FUNCTION(ph_dct_imagehash);
-#if (PHP_MAJOR_VERSION >= 5)
-ZEND_BEGIN_ARG_INFO_EX(ph_dct_imagehash_arg_info, ZEND_SEND_BY_VAL,
-                       ZEND_RETURN_VALUE, 1)
-ZEND_ARG_INFO(0, file)
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(ph_video_dist_arg_info, 0, 2, IS_DOUBLE, 0)
+    ZEND_ARG_INFO(0, h1)
+    ZEND_ARG_INFO(0, h2)
+    ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, thresh, IS_LONG, 0, "21")
 ZEND_END_ARG_INFO()
-#else /* PHP 4.x */
-#define ph_dct_imagehash_arg_info NULL
-#endif
-
-#endif /* HAVE_IMAGE_HASH */
-PHP_FUNCTION(ph_texthash);
-#if (PHP_MAJOR_VERSION >= 5)
-ZEND_BEGIN_ARG_INFO_EX(ph_texthash_arg_info, ZEND_SEND_BY_VAL,
-                       ZEND_RETURN_VALUE, 1)
-ZEND_ARG_INFO(0, file)
-ZEND_END_ARG_INFO()
-#else /* PHP 4.x */
-#define ph_texthash_arg_info NULL
-#endif
-
-#if HAVE_AUDIO_HASH
-PHP_FUNCTION(ph_audiohash);
-#if (PHP_MAJOR_VERSION >= 5)
-ZEND_BEGIN_ARG_INFO_EX(ph_audiohash_arg_info, ZEND_SEND_BY_VAL,
-                       ZEND_RETURN_VALUE, 1)
-ZEND_ARG_INFO(0, file)
-ZEND_ARG_INFO(0, sample_rate)
-ZEND_ARG_INFO(0, channels)
-ZEND_END_ARG_INFO()
-#else /* PHP 4.x */
-#define ph_audiohash_arg_info NULL
-#endif
-
-#endif /* HAVE_AUDIO_HASH */
-#if HAVE_IMAGE_HASH
-PHP_FUNCTION(ph_image_dist);
-#if (PHP_MAJOR_VERSION >= 5)
-ZEND_BEGIN_ARG_INFO_EX(ph_image_dist_arg_info, ZEND_SEND_BY_VAL,
-                       ZEND_RETURN_VALUE, 2)
-ZEND_ARG_INFO(0, h1)
-ZEND_ARG_INFO(0, h2)
-ZEND_END_ARG_INFO()
-#else /* PHP 4.x */
-#define ph_image_dist_arg_info NULL
-#endif
-
-#endif /* HAVE_IMAGE_HASH */
-#if HAVE_VIDEO_HASH
 PHP_FUNCTION(ph_video_dist);
-#if (PHP_MAJOR_VERSION >= 5)
-ZEND_BEGIN_ARG_INFO_EX(ph_video_dist_arg_info, ZEND_SEND_BY_VAL,
-                       ZEND_RETURN_VALUE, 2)
-ZEND_ARG_INFO(0, h1)
-ZEND_ARG_INFO(0, h2)
-ZEND_ARG_INFO(0, thresh)
-ZEND_END_ARG_INFO()
-#else /* PHP 4.x */
-#define ph_video_dist_arg_info NULL
-#endif
-
 #endif /* HAVE_VIDEO_HASH */
-#if HAVE_AUDIO_HASH
-PHP_FUNCTION(ph_audio_dist);
-#if (PHP_MAJOR_VERSION >= 5)
-ZEND_BEGIN_ARG_INFO_EX(ph_audio_dist_arg_info, ZEND_SEND_BY_VAL,
-                       ZEND_RETURN_VALUE, 2)
-ZEND_ARG_INFO(0, h1)
-ZEND_ARG_INFO(0, h2)
-ZEND_ARG_INFO(0, block_size)
-ZEND_ARG_INFO(0, thresh)
-ZEND_END_ARG_INFO()
-#else /* PHP 4.x */
-#define ph_audio_dist_arg_info NULL
-#endif
 
-#endif /* HAVE_AUDIO_HASH */
+#ifdef HAVE_IMAGE_HASH
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(ph_dct_imagehash_arg_info, 0, 1, IS_MIXED, 0)
+    ZEND_ARG_TYPE_INFO(0, file, IS_STRING, 0)
+ZEND_END_ARG_INFO()
+PHP_FUNCTION(ph_dct_imagehash);
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(ph_image_dist_arg_info, 0, 2, IS_DOUBLE, 0)
+    ZEND_ARG_INFO(0, h1)
+    ZEND_ARG_INFO(0, h2)
+ZEND_END_ARG_INFO()
+PHP_FUNCTION(ph_image_dist);
+
+/* Marr-Hildreth wavelet image hash. */
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(ph_mh_imagehash_arg_info, 0, 1, IS_MIXED, 0)
+    ZEND_ARG_TYPE_INFO(0, file, IS_STRING, 0)
+    ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, alpha, IS_DOUBLE, 0, "2.0")
+    ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, level, IS_DOUBLE, 0, "1.0")
+ZEND_END_ARG_INFO()
+PHP_FUNCTION(ph_mh_imagehash);
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(ph_mh_imagehash_from_pixels_arg_info, 0, 4, IS_MIXED, 0)
+    ZEND_ARG_TYPE_INFO(0, pixels,   IS_STRING, 0)
+    ZEND_ARG_TYPE_INFO(0, width,    IS_LONG,   0)
+    ZEND_ARG_TYPE_INFO(0, height,   IS_LONG,   0)
+    ZEND_ARG_TYPE_INFO(0, channels, IS_LONG,   0)
+    ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, alpha, IS_DOUBLE, 0, "2.0")
+    ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, level, IS_DOUBLE, 0, "1.0")
+ZEND_END_ARG_INFO()
+PHP_FUNCTION(ph_mh_imagehash_from_pixels);
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(ph_mh_dist_arg_info, 0, 2, IS_DOUBLE, 0)
+    ZEND_ARG_INFO(0, h1)
+    ZEND_ARG_INFO(0, h2)
+ZEND_END_ARG_INFO()
+PHP_FUNCTION(ph_mh_dist);
+
+/* Radon-projection (radial) image hash. */
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(ph_radial_imagehash_arg_info, 0, 1, IS_MIXED, 0)
+    ZEND_ARG_TYPE_INFO(0, file, IS_STRING, 0)
+    ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, sigma, IS_DOUBLE, 0, "3.5")
+    ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, gamma, IS_DOUBLE, 0, "1.0")
+    ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, N,     IS_LONG,   0, "180")
+ZEND_END_ARG_INFO()
+PHP_FUNCTION(ph_radial_imagehash);
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(ph_radial_dist_arg_info, 0, 2, IS_DOUBLE, 0)
+    ZEND_ARG_INFO(0, h1)
+    ZEND_ARG_INFO(0, h2)
+    ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, threshold, IS_DOUBLE, 0, "0.9")
+ZEND_END_ARG_INFO()
+PHP_FUNCTION(ph_radial_dist);
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(ph_compare_images_arg_info, 0, 2, IS_DOUBLE, 0)
+    ZEND_ARG_TYPE_INFO(0, file1, IS_STRING, 0)
+    ZEND_ARG_TYPE_INFO(0, file2, IS_STRING, 0)
+    ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, sigma,     IS_DOUBLE, 0, "3.5")
+    ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, gamma,     IS_DOUBLE, 0, "1.0")
+    ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, N,         IS_LONG,   0, "180")
+    ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, threshold, IS_DOUBLE, 0, "0.9")
+ZEND_END_ARG_INFO()
+PHP_FUNCTION(ph_compare_images);
+#endif /* HAVE_IMAGE_HASH */
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(ph_texthash_arg_info, 0, 1, IS_MIXED, 0)
+    ZEND_ARG_TYPE_INFO(0, file, IS_STRING, 0)
+ZEND_END_ARG_INFO()
+PHP_FUNCTION(ph_texthash);
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(ph_compare_text_hashes_arg_info, 0, 2, IS_MIXED, 0)
+    ZEND_ARG_INFO(0, h1)
+    ZEND_ARG_INFO(0, h2)
+ZEND_END_ARG_INFO()
 PHP_FUNCTION(ph_compare_text_hashes);
-#if (PHP_MAJOR_VERSION >= 5)
-ZEND_BEGIN_ARG_INFO_EX(ph_compare_text_hashes_arg_info, ZEND_SEND_BY_VAL,
-                       ZEND_RETURN_VALUE, 2)
-ZEND_ARG_INFO(0, h1)
-ZEND_ARG_INFO(0, h2)
+
+#ifdef HAVE_AUDIO_HASH
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(ph_audiohash_arg_info, 0, 1, IS_MIXED, 0)
+    ZEND_ARG_TYPE_INFO(0, file, IS_STRING, 0)
+    ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, sample_rate, IS_LONG, 0, "5512")
+    ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, channels,    IS_LONG, 0, "1")
 ZEND_END_ARG_INFO()
-#else /* PHP 4.x */
-#define ph_compare_text_hashes_arg_info NULL
-#endif
+PHP_FUNCTION(ph_audiohash);
 
-#ifdef __cplusplus
-}  // extern "C"
-#endif
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(ph_audio_dist_arg_info, 0, 2, IS_DOUBLE, 0)
+    ZEND_ARG_INFO(0, h1)
+    ZEND_ARG_INFO(0, h2)
+    ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, block_size, IS_LONG,   0, "256")
+    ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, thresh,     IS_DOUBLE, 0, "0.30")
+ZEND_END_ARG_INFO()
+PHP_FUNCTION(ph_audio_dist);
+#endif /* HAVE_AUDIO_HASH */
 
-#endif /* PHP_HAVE_PHASH */
+#endif /* HAVE_PHASH */
 
 #endif /* PHP_PHASH_H */
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: noet sw=4 ts=4 fdm=marker
- * vim<600: noet sw=4 ts=4
- */
