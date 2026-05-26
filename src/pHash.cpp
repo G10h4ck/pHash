@@ -296,7 +296,21 @@ int _ph_image_digest(const CImg<uint8_t> &img, double sigma, double gamma,
 
     graysc.blur((float)sigma);
 
-    (graysc / graysc.max()).pow(gamma);
+    // Gamma correction. The original expression
+    //     (graysc / graysc.max()).pow(gamma);
+    // discarded its result -- CImg::operator/ returns a new image, and
+    // pow() then modified that temporary which was thrown away at the
+    // semicolon, so graysc was never actually gamma-corrected (issue
+    // #22). Do the work in float space so the curve isn't quantised at
+    // each step, then convert back to the 8-bit pixel type radon expects.
+    if (gamma != 1.0) {
+        CImg<float> tmp(graysc);
+        float maxv = tmp.max();
+        if (maxv > 0) tmp /= maxv;
+        tmp.pow(gamma);
+        tmp *= 255.0f;
+        graysc = tmp;
+    }
 
     if (ph_radon_projections(graysc, N, projs) < 0) goto cleanup;
     if (ph_feature_vector(projs, features) < 0) goto cleanup;
