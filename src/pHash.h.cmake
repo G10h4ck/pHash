@@ -246,11 +246,14 @@ ulong64* ph_dct_videohash(const char *filename, int &Length);
 double ph_dct_videohash_dist(ulong64 *hashA, int N1, ulong64 *hashB, int N2, int threshold=21);
 #endif
 
-/* ! /brief dct video robust hash
- *   Compute video hash based on the dct of normalized video 32x32x64 cube
- *   /param file name of file
- *   /param hash ulong64 value for hash value
- *   /return int value - less than 0 for error
+/*! \brief Hamming distance between two 64-bit perceptual hashes.
+ *  The result is the number of bit positions at which hash1 and hash2
+ *  differ, in the range [0, 64]. Smaller values indicate more similar
+ *  inputs. Companion to ph_dct_imagehash and ph_dct_videohash.
+ *
+ *  \param hash1 first 64-bit hash
+ *  \param hash2 second 64-bit hash
+ *  \return number of differing bits, in [0, 64]
  */
 int ph_hamming_distance(const ulong64 hash1,const ulong64 hash2);
 
