@@ -46,6 +46,7 @@
 #cmakedefine HAVE_IMAGE_HASH
 #cmakedefine HAVE_AUDIO_HASH
 #cmakedefine HAVE_VIDEO_HASH
+#cmakedefine HAVE_HEIF
 #cmakedefine HAVE_LIBMPG123
 #cmakedefine HAVE_SYS_SYSCTL_H
 
