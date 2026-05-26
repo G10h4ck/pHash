@@ -272,6 +272,20 @@ long GetNumberVideoFrames(const char *file) {
                 int timebase = str->time_base.den / str->time_base.num;
                 if (timebase > 0) nb_frames = str->duration / timebase;
             }
+            // Container-level fallback for formats whose stream metadata
+            // does not carry per-stream frame counts or durations -- most
+            // notably MKV and WebM, which only record container-level
+            // duration. Compute frame count from container duration *
+            // average frame rate (issue #36).
+            if (nb_frames <= 0 &&
+                pFormatCtx->duration > 0 &&
+                str->avg_frame_rate.num > 0 &&
+                str->avg_frame_rate.den > 0) {
+                nb_frames = (long)((double)pFormatCtx->duration *
+                                   str->avg_frame_rate.num /
+                                   (double)str->avg_frame_rate.den /
+                                   (double)AV_TIME_BASE);
+            }
         }
     }
 
