@@ -26,10 +26,34 @@
 #ifdef HAVE_VIDEO_HASH
 #include "cimgffmpeg.h"
 #endif
+#include "ph_heif.h"
 
 #include <cmath>
 #include <map>
 #include <vector>
+
+namespace {
+
+// Single entry point for "load any supported image file into a
+// CImg<uint8_t>". HEIF/HEIC/AVIF files are routed to libheif (when
+// HAVE_HEIF is defined); everything else goes through CImg's own loader
+// (libpng / libjpeg / libtiff). Returns 0 on success, non-zero on
+// failure. CImg::load can still throw on truly malformed input -- callers
+// should wrap the call in try/catch.
+int load_image(const char *file, CImg<uint8_t> &img) {
+    if (file == NULL) return -1;
+    if (ph_is_heif_path(file)) {
+#ifdef HAVE_HEIF
+        return ph_load_heif(file, img);
+#else
+        return -1;  // HEIF path but library wasn't built with libheif
+#endif
+    }
+    img.load(file);
+    return 0;
+}
+
+}  // namespace
 
 const char phash_project[] = "%s. Copyright 2008-2010 Aetilius, Inc.";
 char phash_version[255] = {0};
@@ -331,7 +355,8 @@ int ph_image_digest(const char *file, double sigma, double gamma,
                     Digest &digest, int N) {
     if (file == NULL) return -1;
     try {
-        CImg<uint8_t> src(file);
+        CImg<uint8_t> src;
+        if (load_image(file, src) < 0) return -1;
         return _ph_image_digest(src, sigma, gamma, digest, N);
     } catch (CImgIOException &) {
         return -1;
@@ -363,8 +388,9 @@ int ph_compare_images(const char *file1, const char *file2, double &pcc,
                       double sigma, double gamma, int N, double threshold) {
     if (file1 == NULL || file2 == NULL) return -1;
     try {
-        CImg<uint8_t> imA(file1);
-        CImg<uint8_t> imB(file2);
+        CImg<uint8_t> imA, imB;
+        if (load_image(file1, imA) < 0) return -1;
+        if (load_image(file2, imB) < 0) return -1;
         return _ph_compare_images(imA, imB, pcc, sigma, gamma, N, threshold);
     } catch (CImgIOException &) {
         return -1;
@@ -398,7 +424,7 @@ int ph_dct_imagehash(const char *file, ulong64 &hash) {
     }
     CImg<uint8_t> src;
     try {
-        src.load(file);
+        if (load_image(file, src) < 0) return -1;
     } catch (CImgIOException &) {
         return -1;
     } catch (CImgException &) {
@@ -755,7 +781,7 @@ uint8_t *ph_mh_imagehash(const char *filename, int &N, float alpha, float lvl) {
 
     CImg<uint8_t> src;
     try {
-        src.load(filename);
+        if (load_image(filename, src) < 0) return NULL;
     } catch (CImgIOException &) {
         return NULL;
     } catch (CImgException &) {

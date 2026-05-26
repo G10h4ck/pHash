@@ -14,6 +14,7 @@ OPTION(PHASH_DYNAMIC   "Build pHash dynamic library"                     ON)
 OPTION(PHASH_STATIC    "Build pHash static library"                     OFF)
 OPTION(WITH_AUDIO_HASH "Audio hash support"                             OFF)
 OPTION(WITH_VIDEO_HASH "Video hash support"                             OFF)
+OPTION(WITH_HEIF       "HEIF/HEIC/AVIF image support via libheif"       OFF)
 OPTION(PHASH_BINDINGS  "Compile foreign programming languages bindings" OFF)
 OPTION(PHASH_EXAMPLES  "Compile examples"                               OFF)
 
@@ -25,6 +26,33 @@ endif()
 
 if(WITH_VIDEO_HASH)
     set(HAVE_VIDEO_HASH 1)
+endif()
+
+if(WITH_HEIF)
+    find_package(PkgConfig)
+    if(PKG_CONFIG_FOUND)
+        pkg_check_modules(LIBHEIF libheif)
+    endif()
+    if(NOT LIBHEIF_FOUND)
+        # Fallback: look for the header and library directly under common
+        # prefixes. libheif's pkg-config is sometimes missing on Linux
+        # distros that ship the package as `libheif-dev`.
+        find_path(LIBHEIF_INCLUDE_DIRS libheif/heif.h
+                  PATHS /opt/homebrew/include /usr/local/include /usr/include)
+        find_library(LIBHEIF_LIBRARIES NAMES heif libheif
+                     PATHS /opt/homebrew/lib /usr/local/lib /usr/lib)
+        if(LIBHEIF_INCLUDE_DIRS AND LIBHEIF_LIBRARIES)
+            set(LIBHEIF_FOUND TRUE)
+        endif()
+    endif()
+    if(NOT LIBHEIF_FOUND)
+        message(FATAL_ERROR
+            "WITH_HEIF=ON but libheif could not be located. "
+            "Install libheif (Homebrew: `brew install libheif`, "
+            "Debian: `apt install libheif-dev`) or set -DWITH_HEIF=OFF.")
+    endif()
+    set(HAVE_HEIF 1)
+    message(STATUS "libheif found: ${LIBHEIF_INCLUDE_DIRS} ${LIBHEIF_LIBRARIES}")
 endif()
 
 find_path(CIMG_H_DIR NAMES CImg.h PATHS "${CMAKE_CURRENT_SOURCE_DIR}/third-party/CImg")
@@ -102,6 +130,17 @@ if(HAVE_VIDEO_HASH)
     set(LIBS_DEPS ${LIBS_DEPS} avcodec avformat swscale avutil)
 endif()
 
+# ph_heif.cpp is always compiled (it carries the ph_is_heif_path
+# extension probe, which the load_image helper in pHash.cpp needs to
+# distinguish HEIF paths). The libheif-using body inside it is gated
+# behind HAVE_HEIF in the source, so the file builds cleanly even when
+# libheif isn't installed.
+list(APPEND EXTRA_SRC src/ph_heif.cpp)
+if(HAVE_HEIF)
+    include_directories(${LIBHEIF_INCLUDE_DIRS})
+    list(APPEND LIBS_DEPS ${LIBHEIF_LIBRARIES})
+endif()
+
 
 if(PHASH_DYNAMIC)
 	add_library(pHash SHARED ${MMAN_FILE} ${DIRENT_FILE} src/pHash.cpp ${EXTRA_SRC})
@@ -120,6 +159,7 @@ install(FILES src/pHash.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 # CImg<> *). Consumers therefore need CImg.h on their include path; ship
 # the bundled copy alongside.
 install(FILES ${CIMG_H_DIR}/CImg.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES src/ph_heif.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 if(HAVE_AUDIO_HASH)
     install(FILES src/audiophash.h src/ph_fft.h
             DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})

@@ -138,6 +138,7 @@ int main(int argc, char **argv) {
 | **Image hash** | Always (HAVE_IMAGE_HASH=ON by default) | `libpng-dev libjpeg-dev libtiff-dev`                                                           | `libpng libtiff libjpeg` |
 | **Video hash** | `-DWITH_VIDEO_HASH=ON`   | `libavcodec-dev libavformat-dev libavutil-dev libswscale-dev`                                  | `ffmpeg` |
 | **Audio hash** | `-DWITH_AUDIO_HASH=ON`   | `libsndfile1-dev libsamplerate0-dev libmpg123-dev`                                             | `libsndfile libsamplerate mpg123` |
+| **HEIF/HEIC/AVIF** | `-DWITH_HEIF=ON`     | `libheif-dev`                                                                                  | `libheif` |
 | **Threads**    | Always                   | pthreads from the standard libc                                                                | — (built-in) |
 
 Note: pHash bundles [CImg](http://cimg.eu/) in `third-party/CImg/` — no separate install needed.
@@ -154,6 +155,7 @@ FFmpeg **5, 6, 7, and 8** are all supported.
 | `PHASH_STATIC`          | `OFF`   | Build the static library |
 | `WITH_AUDIO_HASH`       | `OFF`   | Compile `audiophash.cpp` and the audio hash API |
 | `WITH_VIDEO_HASH`       | `OFF`   | Compile `cimgffmpeg.cpp` and the video hash API |
+| `WITH_HEIF`             | `OFF`   | Decode `.heic` / `.heif` / `.avif` via libheif (issue #18) |
 | `PHASH_EXAMPLES`        | `OFF`   | Build the `TestDCT` / `TestRadish` / etc. demos |
 | `PHASH_BINDINGS`        | `OFF`   | Build language bindings (Java/C#/PHP) |
 
