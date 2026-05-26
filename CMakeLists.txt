@@ -67,8 +67,16 @@ endif()
 
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BUILD_TYPE}")
 
-link_directories(/usr/local/lib)
-include_directories(/usr/local/include)
+# Pick up libpng / libjpeg / libtiff / etc. from common Homebrew prefixes
+# (/opt/homebrew on Apple Silicon, /usr/local on Intel) and from system paths.
+foreach(_prefix /opt/homebrew /usr/local)
+    if(IS_DIRECTORY ${_prefix}/lib)
+        link_directories(${_prefix}/lib)
+    endif()
+    if(IS_DIRECTORY ${_prefix}/include)
+        include_directories(${_prefix}/include)
+    endif()
+endforeach()
 
 
 set(LIBS_DEPS png z jpeg tiff)
@@ -108,6 +116,14 @@ target_link_libraries(pHash ${LIBS_DEPS})
 
 install(TARGETS pHash DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(FILES src/pHash.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+# pHash.h #includes CImg.h (its public Projections struct exposes a
+# CImg<> *). Consumers therefore need CImg.h on their include path; ship
+# the bundled copy alongside.
+install(FILES ${CIMG_H_DIR}/CImg.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+if(HAVE_AUDIO_HASH)
+    install(FILES src/audiophash.h src/ph_fft.h
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/pHash.pc
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
